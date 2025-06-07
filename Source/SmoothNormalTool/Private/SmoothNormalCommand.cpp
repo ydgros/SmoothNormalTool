@@ -9,11 +9,11 @@ inline void SmoothNormalCommand::SmoothNormal(TArray<FAssetData> SelectedAssets)
 {
 	for (int i = 0; i < SelectedAssets.Num(); i++)
 	{
-		if (SelectedAssets[i].AssetClass.IsEqual(FName("StaticMesh")))
+		if (SelectedAssets[i].AssetName.IsEqual(FName("StaticMesh"))) //AssetClass to AssetName
 		{
 			SmoothNormalStaticMeshTriangle(SelectedAssets[i]);
 		}
-		if (SelectedAssets[i].AssetClass.IsEqual(FName("SkeletalMesh")))
+		if (SelectedAssets[i].AssetName.IsEqual(FName("SkeletalMesh")))
 		{
 			SmoothNormalSkeletalMesh(SelectedAssets[i]);
 		}
@@ -199,9 +199,7 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 
 	FSkeletalMeshImportData RawMesh;
 
-	SkeletalMesh->LoadLODImportedData(0, RawMesh);
-
-
+	//SkeletalMesh->LoadLODImportedData(0, RawMesh);
 
 	TMap<FVector3f, TArray<FSoftSkinVertex>> VertexSkinMap;
 	{
@@ -254,8 +252,6 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 		}
 	}
 
-
-
 	for (int FaceIndex = 0; FaceIndex < RawMesh.Faces.Num(); FaceIndex++)
 	{
 		SkeletalMeshImportData::FTriangle Face = RawMesh.Faces[FaceIndex];
@@ -273,8 +269,6 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 		}
 
 	}
-
-
 
 	for (int FaceIndex = 0; FaceIndex < RawMesh.Faces.Num(); FaceIndex++)
 	{
@@ -323,13 +317,13 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 
 	}
 	RawMesh.NumTexCoords = 4;
-
-	SkeletalMesh->SaveLODImportedData(0, RawMesh);
+	
+	//SkeletalMesh->SaveLODImportedData(0, RawMesh); //ydgro 堆栈错误
 
 	SkeletalMesh->Build();
 	SkeletalMesh->PostEditChange();
 
-	SkeletalMesh->MarkPackageDirty();
+	//SkeletalMesh->MarkPackageDirty(); //表达式未使用
 }
 
 void SmoothNormalCommand::SmoothNormalStaticMeshTriangle(FAssetData AssetData)
@@ -476,5 +470,5 @@ void SmoothNormalCommand::SmoothNormalStaticMeshTriangle(FAssetData AssetData)
 	StaticMesh->Build(false);
 	StaticMesh->PostEditChange();
 
-	StaticMesh->MarkPackageDirty();
+	//StaticMesh->MarkPackageDirty(); //表达式未使用
 }
