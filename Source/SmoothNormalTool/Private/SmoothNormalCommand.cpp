@@ -1,35 +1,54 @@
 #include "SmoothNormalCommand.h"
 #include "Engine/StaticMesh.h"
-#include "Engine/StaticMeshSourceData.h"
+#include "Engine/SkeletalMesh.h"
 #include "RawMesh.h"
 #include "math.h"
 #include "MeshUtilities.h"
 #include "Rendering/SkeletalMeshModel.h"
+
+namespace
+{
+	inline FVector ToFVector(const FVector3f& Value)
+	{
+		return FVector(Value.X, Value.Y, Value.Z);
+	}
+
+	inline FVector ToFVector(const FVector4f& Value)
+	{
+		return FVector(Value.X, Value.Y, Value.Z);
+	}
+
+	inline FVector3f ToFVector3f(const FVector& Value)
+	{
+		return FVector3f(Value.X, Value.Y, Value.Z);
+	}
+}
+
 inline void SmoothNormalCommand::SmoothNormal(TArray<FAssetData> SelectedAssets)
 {
 	for (int i = 0; i < SelectedAssets.Num(); i++)
 	{
-		if (SelectedAssets[i].AssetName.IsEqual(FName("StaticMesh"))) //AssetClass to AssetName
+		if (SelectedAssets[i].AssetClassPath == UStaticMesh::StaticClass()->GetClassPathName())
 		{
 			SmoothNormalStaticMeshTriangle(SelectedAssets[i]);
 		}
-		if (SelectedAssets[i].AssetName.IsEqual(FName("SkeletalMesh")))
+		if (SelectedAssets[i].AssetClassPath == USkeletalMesh::StaticClass()->GetClassPathName())
 		{
 			SmoothNormalSkeletalMesh(SelectedAssets[i]);
 		}
 	}
 }
 
-void WeildVertex(TMap<FVector3f, FVector3f>& VertexNormalMap,TMap<FVector3f, FVector3f>& VertexWieldRemap)
+void WeildVertex(TMap<FVector, FVector>& VertexNormalMap,TMap<FVector, FVector>& VertexWieldRemap)
 {
-	TArray<FVector3f> AllPositions;
-	TArray<FVector3f> WieldPositions;
+	TArray<FVector> AllPositions;
+	TArray<FVector> WieldPositions;
 	VertexNormalMap.GetKeys(AllPositions);
 
 	for (int i = 0; i < AllPositions.Num(); i++)
 	{
 		int foundIndex = INDEX_NONE;
-		FVector3f Cur = AllPositions[i];
+		FVector Cur = AllPositions[i];
 		for (int j = 0; j < WieldPositions.Num(); j++)
 		{
 			if (Cur.Equals(WieldPositions[j], 0.1f))
@@ -50,8 +69,8 @@ void WeildVertex(TMap<FVector3f, FVector3f>& VertexNormalMap,TMap<FVector3f, FVe
 	}
 	for (int i = 0; i < AllPositions.Num(); i++)
 	{
-		FVector3f Cur = AllPositions[i];
-		FVector3f Weild = VertexWieldRemap[Cur];
+		FVector Cur = AllPositions[i];
+		FVector Weild = VertexWieldRemap[Cur];
 		if (Weild != Cur)
 		{
 			//VertexNormalMap[Weild] += VertexNormalMap[Cur];
@@ -68,11 +87,11 @@ void SmoothNormalCommand::SmoothNormalStaticMesh(FAssetData AssetData)
 
 	const TArray<int32>& WedgeMap = StaticMesh->GetRenderData()->LODResources[0].WedgeMap;
 
-	TMap<FVector3f, FVector3f> VertexNormalMap;
-	TMap<FVector3f, FVector3f> VertexWieldRemap;
+	TMap<FVector, FVector> VertexNormalMap;
+	TMap<FVector, FVector> VertexWieldRemap;
 	for(int Index = 0; Index < StaticMesh->GetNumSourceModels(); Index++)
 	{
-		FStaticMeshSourceModel& SourceModel = StaticMesh->GetSourceModel(0);
+		FStaticMeshSourceModel& SourceModel = const_cast<FStaticMeshSourceModel&>(StaticMesh->GetSourceModels()[Index]);
 		FRawMesh RawMesh;
 
 		SourceModel.LoadRawMesh(RawMesh);
@@ -80,15 +99,15 @@ void SmoothNormalCommand::SmoothNormalStaticMesh(FAssetData AssetData)
 		for (int WedgeIndex = 0; WedgeIndex < RawMesh.WedgeIndices.Num(); WedgeIndex++)
 		{
 			int RawVertexIndex = RawMesh.WedgeIndices[WedgeIndex];
-			FVector3f RawVertexPosition = RawMesh.VertexPositions[RawVertexIndex];
+			FVector RawVertexPosition = ToFVector(RawMesh.VertexPositions[RawVertexIndex]);
 		
 
 			int VertexIndex = WedgeMap[WedgeIndex];
-			FVector3f RenderVetexPosition = PositionBuffer.VertexPosition(VertexIndex);
-			FVector3f RenderVertexNormal = VertexBuffer.VertexTangentZ(VertexIndex);
+			FVector RenderVetexPosition = ToFVector(PositionBuffer.VertexPosition(VertexIndex));
+			FVector RenderVertexNormal = ToFVector(VertexBuffer.VertexTangentZ(VertexIndex));
 			if(!VertexNormalMap.Contains(RawVertexPosition))
 			{
-				VertexNormalMap.Add(RawVertexPosition, FVector3f::ZeroVector);
+				VertexNormalMap.Add(RawVertexPosition, FVector::ZeroVector);
 			}
 			VertexNormalMap[RawVertexPosition] += RenderVertexNormal;
 		}
@@ -106,31 +125,31 @@ void SmoothNormalCommand::SmoothNormalStaticMesh(FAssetData AssetData)
 		RawMesh.WedgeTexCoords[3].Empty();
 		for (int WedgeIndex = 0; WedgeIndex < RawMesh.WedgeIndices.Num(); WedgeIndex++)
 		{
-			FVector3f RawVertexPosition = RawMesh.VertexPositions[RawMesh.WedgeIndices[WedgeIndex]];
+			FVector RawVertexPosition = ToFVector(RawMesh.VertexPositions[RawMesh.WedgeIndices[WedgeIndex]]);
 
 			int RenderVertexIndex = WedgeMap[WedgeIndex];
-			FVector3f VertexTangentZ = VertexBuffer.VertexTangentZ(RenderVertexIndex);
-			FVector3f VertexTangentX = VertexBuffer.VertexTangentX(RenderVertexIndex);
-			FVector3f VertexTangentY = VertexBuffer.VertexTangentY(RenderVertexIndex);
+			FVector VertexTangentZ = ToFVector(VertexBuffer.VertexTangentZ(RenderVertexIndex));
+			FVector VertexTangentX = ToFVector(VertexBuffer.VertexTangentX(RenderVertexIndex));
+			FVector VertexTangentY = ToFVector(VertexBuffer.VertexTangentY(RenderVertexIndex));
 			
-			FVector3f WeidlRemapVertex = VertexWieldRemap[RawVertexPosition];
-			FVector3f SmoothNormal = VertexNormalMap[WeidlRemapVertex].GetSafeNormal();
-			FVector3f SmoothNormalAtTangent = FVector3f::ZeroVector;
+			FVector WeidlRemapVertex = VertexWieldRemap[RawVertexPosition];
+			FVector SmoothNormal = VertexNormalMap[WeidlRemapVertex].GetSafeNormal();
+			FVector SmoothNormalAtTangent = FVector::ZeroVector;
 
-			if (VertexTangentX != FVector3f::ZeroVector
-				&&VertexTangentY != FVector3f::ZeroVector
-				&&VertexTangentZ != FVector3f::ZeroVector)
+			if (VertexTangentX != FVector::ZeroVector
+				&&VertexTangentY != FVector::ZeroVector
+				&&VertexTangentZ != FVector::ZeroVector)
 			{
-				FMatrix44f TangentToNormal(VertexTangentX, VertexTangentY, VertexTangentZ, FVector3f(0, 0, 0));
+				FMatrix TangentToNormal(VertexTangentX, VertexTangentY, VertexTangentZ, FVector(0, 0, 0));
 				//将平均法线转换到切线空间存储
 				SmoothNormalAtTangent = TangentToNormal.InverseTransformVector(SmoothNormal).GetSafeNormal();
 			}
 			else
 			{
-				SmoothNormalAtTangent = FVector3f::ZeroVector;
+				SmoothNormalAtTangent = FVector::ZeroVector;
 			}
 			RawMesh.WedgeTexCoords[3].Add(FVector2f(SmoothNormalAtTangent.X, SmoothNormalAtTangent.Y));
-			RawMesh.WedgeTangentZ[WedgeIndex] = SmoothNormal;
+			RawMesh.WedgeTangentZ[WedgeIndex] = ToFVector3f(SmoothNormal);
 		}
 		SourceModel.SaveRawMesh(RawMesh);
 	}
@@ -140,23 +159,24 @@ void SmoothNormalCommand::SmoothNormalStaticMesh(FAssetData AssetData)
 	StaticMesh->MarkPackageDirty();
 }
 
-void BuildSoftSkinVertexMap(TArray<FSoftSkinVertex>& Vertices, TMap<FVector3f, TArray<FSoftSkinVertex>>& VertexSkinMap)
+void BuildSoftSkinVertexMap(TArray<FSoftSkinVertex>& Vertices, TMap<FVector, TArray<FSoftSkinVertex>>& VertexSkinMap)
 {
 	for (int i = 0; i < Vertices.Num(); i++)
 	{
-		if (VertexSkinMap.Contains(Vertices[i].Position))
+		const FVector PositionKey = ToFVector(Vertices[i].Position);
+		if (VertexSkinMap.Contains(PositionKey))
 		{
-			VertexSkinMap[Vertices[i].Position].Add(Vertices[i]);
+			VertexSkinMap[PositionKey].Add(Vertices[i]);
 		}
 		else
 		{
-			VertexSkinMap.Add(Vertices[i].Position, TArray<FSoftSkinVertex>());
-			VertexSkinMap[Vertices[i].Position].Add(Vertices[i]);
+			VertexSkinMap.Add(PositionKey, TArray<FSoftSkinVertex>());
+			VertexSkinMap[PositionKey].Add(Vertices[i]);
 		}
 	}
 }
 
-FSoftSkinVertex* FindSoftSkinVertex(TMap<FVector3f, TArray<FSoftSkinVertex>>& VertexSkinMap,FVector3f Center, FVector3f Position,FVector3f Normal,FVector2f UV0)
+FSoftSkinVertex* FindSoftSkinVertex(TMap<FVector, TArray<FSoftSkinVertex>>& VertexSkinMap,FVector Center, FVector Position,FVector Normal,FVector2f UV0)
 {
 	FSoftSkinVertex *Result = NULL;
 	if (VertexSkinMap.Contains(Center))
@@ -164,7 +184,7 @@ FSoftSkinVertex* FindSoftSkinVertex(TMap<FVector3f, TArray<FSoftSkinVertex>>& Ve
 		TArray<FSoftSkinVertex>& Array = VertexSkinMap[Center];
 		for (int i = 0; i < Array.Num(); i++)
 		{
-			if (Array[i].Position==Position&&Array[i].UVs[0]== UV0)
+			if (ToFVector(Array[i].Position) == Position && Array[i].UVs[0] == UV0)
 			{
 				if (Result == NULL)
 				{
@@ -195,13 +215,15 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 	MeshBuildSettings.bRemoveDegenerates = true;
 	MeshBuildSettings.bUseMikkTSpace = false;
 
-	TMap<FVector3f, FVector3f> VertexNormalMap;
+	TMap<FVector, FVector> VertexNormalMap;
 
 	FSkeletalMeshImportData RawMesh;
 
-	//SkeletalMesh->LoadLODImportedData(0, RawMesh);
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS
+	SkeletalMesh->LoadLODImportedData(0, RawMesh);
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
-	TMap<FVector3f, TArray<FSoftSkinVertex>> VertexSkinMap;
+	TMap<FVector, TArray<FSoftSkinVertex>> VertexSkinMap;
 	{
 		FSkeletalMeshModel* SkelMeshModel = SkeletalMesh->GetImportedModel();
 
@@ -213,7 +235,7 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 
 		for (int i = 0; i < NumFaces; i++)
 		{
-			FVector3f Center=FVector3f::ZeroVector;
+			FVector Center=FVector::ZeroVector;
 
 			bool flag=false;
 
@@ -221,7 +243,7 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 			{
 				int VertIndex = ImportedModel->IndexBuffer[i * 3 + j];
 
-				Center += Vertices[VertIndex].Position;
+				Center += ToFVector(Vertices[VertIndex].Position);
 
 				int ZeroCount = Vertices[VertIndex].TangentX.IsZero()+ Vertices[VertIndex].TangentY.IsZero()+ Vertices[VertIndex].TangentZ.IsNearlyZero3();
 				if (ZeroCount>=2)
@@ -252,6 +274,8 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 		}
 	}
 
+
+
 	for (int FaceIndex = 0; FaceIndex < RawMesh.Faces.Num(); FaceIndex++)
 	{
 		SkeletalMeshImportData::FTriangle Face = RawMesh.Faces[FaceIndex];
@@ -259,26 +283,28 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 		for (int i = 0; i < 3; i++)
 		{
 			SkeletalMeshImportData::FVertex Wedge = RawMesh.Wedges[Face.WedgeIndex[i]];
-			FVector3f VertexPosition = RawMesh.Points[Wedge.VertexIndex];
-			FVector3f VertexNormal = Face.TangentZ[i];
+			FVector VertexPosition = ToFVector(RawMesh.Points[Wedge.VertexIndex]);
+			FVector VertexNormal = ToFVector(Face.TangentZ[i]);
 			if (!VertexNormalMap.Contains(VertexPosition))
 			{
-				VertexNormalMap.Add(VertexPosition, FVector3f::ZeroVector);
+				VertexNormalMap.Add(VertexPosition, FVector::ZeroVector);
 			}
 			VertexNormalMap[VertexPosition] += VertexNormal;
 		}
 
 	}
 
+
+
 	for (int FaceIndex = 0; FaceIndex < RawMesh.Faces.Num(); FaceIndex++)
 	{
 		SkeletalMeshImportData::FTriangle Face = RawMesh.Faces[FaceIndex];
 
-		FVector3f Center=FVector3f::ZeroVector;
+		FVector Center=FVector::ZeroVector;
 		for (int i = 0; i < 3; i++)
 		{
 			SkeletalMeshImportData::FVertex Wedge = RawMesh.Wedges[Face.WedgeIndex[i]];
-			FVector3f VertexPosition = RawMesh.Points[Wedge.VertexIndex];
+			FVector VertexPosition = ToFVector(RawMesh.Points[Wedge.VertexIndex]);
 			Center += VertexPosition;
 		}
 		Center /= 3;
@@ -286,27 +312,27 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 		for (int i = 0; i < 3; i++)
 		{
 			SkeletalMeshImportData::FVertex Wedge = RawMesh.Wedges[Face.WedgeIndex[i]];
-			FVector3f VertexPosition = RawMesh.Points[Wedge.VertexIndex];
+			FVector VertexPosition = ToFVector(RawMesh.Points[Wedge.VertexIndex]);
 
-			FVector3f SmoothNormal = VertexNormalMap[VertexPosition].GetSafeNormal();
+			FVector SmoothNormal = VertexNormalMap[VertexPosition].GetSafeNormal();
 
-			FSoftSkinVertex* SkinVertex = FindSoftSkinVertex(VertexSkinMap, Center, VertexPosition, Face.TangentZ[i],Wedge.UVs[0]);
+			FSoftSkinVertex* SkinVertex = FindSoftSkinVertex(VertexSkinMap, Center, VertexPosition, ToFVector(Face.TangentZ[i]),Wedge.UVs[0]);
 
-			FVector3f SmoothNormalAtTangent;
+			FVector SmoothNormalAtTangent;
 			if (SkinVertex!=NULL)
 			{
-				FVector3f TangentX = SkinVertex->TangentX;
-				FVector3f TangentY = SkinVertex->TangentY;
-				FVector3f TangentZ = SkinVertex->TangentZ;
+				FVector TangentX = ToFVector(SkinVertex->TangentX);
+				FVector TangentY = ToFVector(SkinVertex->TangentY);
+				FVector TangentZ = ToFVector(SkinVertex->TangentZ);
 
-				FMatrix44f TangentToNormal(TangentX, TangentY, TangentZ, FVector3f(0, 0, 0));
+				FMatrix TangentToNormal(TangentX, TangentY, TangentZ, FVector(0, 0, 0));
 
 				SmoothNormalAtTangent = TangentToNormal.InverseTransformVector(SmoothNormal);
 			}
 			else
 			{
-				SmoothNormalAtTangent = FVector3f(0, 0, 1);
-				SkinVertex = FindSoftSkinVertex(VertexSkinMap, Center, VertexPosition, Face.TangentZ[i], Wedge.UVs[0]);
+				SmoothNormalAtTangent = FVector(0, 0, 1);
+				SkinVertex = FindSoftSkinVertex(VertexSkinMap, Center, VertexPosition, ToFVector(Face.TangentZ[i]), Wedge.UVs[0]);
 			}
 			
 			RawMesh.Wedges[Face.WedgeIndex[i]].UVs[1] = FVector2f::ZeroVector;
@@ -317,13 +343,15 @@ void SmoothNormalCommand::SmoothNormalSkeletalMesh(FAssetData AssetData)
 
 	}
 	RawMesh.NumTexCoords = 4;
-	
-	//SkeletalMesh->SaveLODImportedData(0, RawMesh); //ydgro 堆栈错误
+
+	PRAGMA_DISABLE_DEPRECATION_WARNINGS
+	SkeletalMesh->SaveLODImportedData(0, RawMesh);
+	PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 	SkeletalMesh->Build();
 	SkeletalMesh->PostEditChange();
 
-	//SkeletalMesh->MarkPackageDirty(); //表达式未使用
+	SkeletalMesh->MarkPackageDirty();
 }
 
 void SmoothNormalCommand::SmoothNormalStaticMeshTriangle(FAssetData AssetData)
@@ -335,12 +363,12 @@ void SmoothNormalCommand::SmoothNormalStaticMeshTriangle(FAssetData AssetData)
 
 	const TArray<int32>& WedgeMap = StaticMesh->GetRenderData()->LODResources[0].WedgeMap;
 
-	TMap<FVector3f, FVector3f> VertexNormalMap;
-	TMap<FVector3f, FVector3f> VertexWieldRemap;
-	TMap<FVector3f, TArray<FVector3f>> WeightingNormalMap;
+	TMap<FVector, FVector> VertexNormalMap;
+	TMap<FVector, FVector> VertexWieldRemap;
+	TMap<FVector, TArray<FVector>> WeightingNormalMap;
 	for(int Index = 0; Index < StaticMesh->GetNumSourceModels(); Index++)
 	{
-		FStaticMeshSourceModel& SourceModel = StaticMesh->GetSourceModel(0);
+		FStaticMeshSourceModel& SourceModel = const_cast<FStaticMeshSourceModel&>(StaticMesh->GetSourceModels()[Index]);
 		FRawMesh RawMesh;
 
 		SourceModel.LoadRawMesh(RawMesh);
@@ -352,22 +380,22 @@ void SmoothNormalCommand::SmoothNormalStaticMeshTriangle(FAssetData AssetData)
 			int RawVertexIndex = RawMesh.WedgeIndices[WedgeIndex];
 			int RawVertexIndex1 = RawMesh.WedgeIndices[WedgeIndex + 1];
 			int RawVertexIndex2 = RawMesh.WedgeIndices[WedgeIndex + 2];
-			FVector3f RawVertexPosition = RawMesh.VertexPositions[RawVertexIndex];
-			FVector3f RawVertexPosition1 = RawMesh.VertexPositions[RawVertexIndex1];
-			FVector3f RawVertexPosition2 = RawMesh.VertexPositions[RawVertexIndex2];
+			FVector RawVertexPosition = ToFVector(RawMesh.VertexPositions[RawVertexIndex]);
+			FVector RawVertexPosition1 = ToFVector(RawMesh.VertexPositions[RawVertexIndex1]);
+			FVector RawVertexPosition2 = ToFVector(RawMesh.VertexPositions[RawVertexIndex2]);
 			int VertexIndex = WedgeMap[WedgeIndex];
 			int VertexIndex1 = WedgeMap[WedgeIndex + 1];
 			int VertexIndex2 = WedgeMap[WedgeIndex + 2 ];
-			FVector3f VertexNormal = VertexBuffer.VertexTangentZ(VertexIndex);
+			FVector VertexNormal = ToFVector(VertexBuffer.VertexTangentZ(VertexIndex));
 
-			FVector3f Side = RawVertexPosition1 - RawVertexPosition;
-			FVector3f Side1 = RawVertexPosition2 - RawVertexPosition;
-			float Angle = acos(FVector3f::DotProduct(Side.GetSafeNormal(), Side1.GetSafeNormal()));
+			FVector Side = RawVertexPosition1 - RawVertexPosition;
+			FVector Side1 = RawVertexPosition2 - RawVertexPosition;
+			float Angle = acos(FVector::DotProduct(Side.GetSafeNormal(), Side1.GetSafeNormal()));
 			check(Angle>=0);
 			VertexNormal *= Angle;
 			if(!WeightingNormalMap.Contains(RawVertexPosition))
 			{
-				TArray<FVector3f> Normals;
+				TArray<FVector> Normals;
 				
 				Normals.Add(VertexNormal);
 				WeightingNormalMap.Add(RawVertexPosition, Normals);
@@ -378,15 +406,15 @@ void SmoothNormalCommand::SmoothNormalStaticMeshTriangle(FAssetData AssetData)
 				auto& Array = WeightingNormalMap[RawVertexPosition];
 				Array.Add(VertexNormal);
 			}
-			VertexNormal = VertexBuffer.VertexTangentZ(VertexIndex1);
+			VertexNormal = ToFVector(VertexBuffer.VertexTangentZ(VertexIndex1));
 			Side = RawVertexPosition - RawVertexPosition1;
 			Side1 = RawVertexPosition2 - RawVertexPosition1;
-			Angle = acos(FVector3f::DotProduct(Side.GetSafeNormal(), Side1.GetSafeNormal()));
+			Angle = acos(FVector::DotProduct(Side.GetSafeNormal(), Side1.GetSafeNormal()));
 			check(Angle>=0);
 			VertexNormal *= Angle;
 			if(!WeightingNormalMap.Contains(RawVertexPosition1))
 			{
-				TArray<FVector3f> Normals;
+				TArray<FVector> Normals;
 				
 				Normals.Add(VertexNormal);
 				WeightingNormalMap.Add(RawVertexPosition1, Normals);
@@ -397,15 +425,15 @@ void SmoothNormalCommand::SmoothNormalStaticMeshTriangle(FAssetData AssetData)
 				auto& Array = WeightingNormalMap[RawVertexPosition1];
 				Array.Add(VertexNormal);
 			}
-			VertexNormal = VertexBuffer.VertexTangentZ(VertexIndex2);
+			VertexNormal = ToFVector(VertexBuffer.VertexTangentZ(VertexIndex2));
 			Side = RawVertexPosition - RawVertexPosition2;
 			Side1 = RawVertexPosition1 - RawVertexPosition2;
-			Angle = acos(FVector3f::DotProduct(Side.GetSafeNormal(), Side1.GetSafeNormal()));
+			Angle = acos(FVector::DotProduct(Side.GetSafeNormal(), Side1.GetSafeNormal()));
 			check(Angle>=0);
 			VertexNormal *= Angle;
 			if(!WeightingNormalMap.Contains(RawVertexPosition2))
 			{
-				TArray<FVector3f> Normals;
+				TArray<FVector> Normals;
 				
 				Normals.Add(VertexNormal);
 				WeightingNormalMap.Add(RawVertexPosition2, Normals);
@@ -429,38 +457,38 @@ void SmoothNormalCommand::SmoothNormalStaticMeshTriangle(FAssetData AssetData)
 		
 		for (int WedgeIndex = 0; WedgeIndex < RawMesh.WedgeIndices.Num(); WedgeIndex++)
 		{
-			FVector3f RawVertexPosition = RawMesh.VertexPositions[RawMesh.WedgeIndices[WedgeIndex]];
+			FVector RawVertexPosition = ToFVector(RawMesh.VertexPositions[RawMesh.WedgeIndices[WedgeIndex]]);
 
 			int RenderVertexIndex = WedgeMap[WedgeIndex];
-			FVector3f VertexTangentZ = VertexBuffer.VertexTangentZ(RenderVertexIndex);
-			FVector3f VertexTangentX = VertexBuffer.VertexTangentX(RenderVertexIndex);
-			FVector3f VertexTangentY = VertexBuffer.VertexTangentY(RenderVertexIndex);
-			FVector3f SmoothNormal = FVector3f::ZeroVector;
+			FVector VertexTangentZ = ToFVector(VertexBuffer.VertexTangentZ(RenderVertexIndex));
+			FVector VertexTangentX = ToFVector(VertexBuffer.VertexTangentX(RenderVertexIndex));
+			FVector VertexTangentY = ToFVector(VertexBuffer.VertexTangentY(RenderVertexIndex));
+			FVector SmoothNormal = FVector::ZeroVector;
 			if(!WeightingNormalMap.Contains(RawVertexPosition))
 			{
 				check(false);
 			}
 			else
 			{
-				const TArray<FVector3f>& WeightingNormals  = WeightingNormalMap[RawVertexPosition];
+				const TArray<FVector>& WeightingNormals  = WeightingNormalMap[RawVertexPosition];
 				for(const auto& Normal : WeightingNormals)
 				{
 					SmoothNormal += Normal;
 				}
 			}
 			SmoothNormal = SmoothNormal.GetSafeNormal();
-			FVector3f SmoothNormalAtTangent = FVector3f::ZeroVector;
+			FVector SmoothNormalAtTangent = FVector::ZeroVector;
 
-			if (VertexTangentX != FVector3f::ZeroVector
-				&&VertexTangentY != FVector3f::ZeroVector
-				&&VertexTangentZ != FVector3f::ZeroVector)
+			if (VertexTangentX != FVector::ZeroVector
+				&&VertexTangentY != FVector::ZeroVector
+				&&VertexTangentZ != FVector::ZeroVector)
 			{
-				FMatrix44f TangentToNormal(VertexTangentX, VertexTangentY, VertexTangentZ, FVector3f(0, 0, 0));
+				FMatrix TangentToNormal(VertexTangentX, VertexTangentY, VertexTangentZ, FVector(0, 0, 0));
 				SmoothNormalAtTangent = TangentToNormal.InverseTransformVector(SmoothNormal).GetSafeNormal();
 			}
 			else
 			{
-				SmoothNormalAtTangent = FVector3f::ZeroVector;
+				SmoothNormalAtTangent = FVector::ZeroVector;
 			}
 			RawMesh.WedgeTexCoords[3].Add(FVector2f(SmoothNormalAtTangent.X, SmoothNormalAtTangent.Y));
 			//RawMesh.WedgeTangentZ[WedgeIndex] = SmoothNormal;
@@ -470,5 +498,5 @@ void SmoothNormalCommand::SmoothNormalStaticMeshTriangle(FAssetData AssetData)
 	StaticMesh->Build(false);
 	StaticMesh->PostEditChange();
 
-	//StaticMesh->MarkPackageDirty(); //表达式未使用
+	StaticMesh->MarkPackageDirty();
 }
